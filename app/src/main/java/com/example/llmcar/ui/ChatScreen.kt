@@ -1,15 +1,20 @@
 package com.example.llmcar.ui
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.*
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
@@ -18,17 +23,28 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.example.llmcar.data.PresetRepository
+import com.example.llmcar.data.SettingsRepository
 import com.example.llmcar.service.LlmStatus
 import com.example.llmcar.ui.components.OrbState
 import com.example.llmcar.ui.components.SoundBars
 import com.example.llmcar.ui.components.VoiceOrb
+import com.example.llmcar.ui.theme.OverlayStyle
+import com.example.llmcar.ui.theme.PaletteColors
+import com.example.llmcar.ui.theme.VisualTheme
 import com.example.llmcar.util.AppSignals
 import com.example.llmcar.voice.VoiceEvent
 import com.example.llmcar.voice.VoiceInputController
@@ -45,9 +61,13 @@ fun ChatScreen(
     onOpenSettings: () -> Unit,
     onOpenDashboard: () -> Unit
 ) {
+    val context = LocalContext.current
     val vm: ChatViewModel = viewModel()
-    val scope = rememberCoroutineScope()
-    val settings = remember { vm.settingsRepo() }
+
+    // Отдельный экземпляр настроек — читает актуальные визуальные параметры
+    // при каждой композиции ChatScreen (после возврата из настроек).
+    val visualSettings = remember { SettingsRepository(context.applicationContext) }
+    val palette = VisualTheme.palette(visualSettings.accentHue)
 
     var inputText by remember { mutableStateOf("") }
     var overlayVisible by remember { mutableStateOf(false) }
@@ -66,6 +86,7 @@ fun ChatScreen(
                 .background(MaterialTheme.colorScheme.background)
                 .padding(16.dp)
         ) {
+            // ===================== Верхняя панель =====================
             Row(
                 Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -88,7 +109,7 @@ fun ChatScreen(
                             else -> Color(0xFFFFC107)
                         }
                     )
-                    Text("Режим: $presetName", fontSize = 12.sp, color = Color(0xFF7C4DFF))
+                    Text("Режим: $presetName", fontSize = 12.sp, color = palette.accent)
                     if (voiceStatus.isNotBlank() && voiceStatus != "Не активно")
                         Text(voiceStatus, fontSize = 11.sp, color = Color(0xFF9090A0))
                 }
@@ -102,6 +123,7 @@ fun ChatScreen(
 
             Spacer(Modifier.height(12.dp))
 
+            // ===================== Сообщения =====================
             LazyColumn(
                 Modifier.weight(1f),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
@@ -119,80 +141,254 @@ fun ChatScreen(
 
             Spacer(Modifier.height(12.dp))
 
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                OutlinedTextField(
-                    value = inputText,
-                    onValueChange = { inputText = it },
-                    modifier = Modifier.weight(1f),
-                    placeholder = { Text("Введите сообщение…") },
-                    enabled = serviceStatus is LlmStatus.Ready && !vm.isSending,
-                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
-                    keyboardActions = KeyboardActions(onSend = {
-                        val t = inputText
-                        if (t.isNotBlank()) { inputText = ""; vm.send(t) }
-                    }),
-                    shape = RoundedCornerShape(24.dp)
-                )
-                Spacer(Modifier.width(4.dp))
-
-                IconButton(
-                    onClick = { overlayVisible = true },
-                    enabled = serviceStatus is LlmStatus.Ready
-                ) {
-                    Icon(Icons.Default.Mic, "Голос", tint = Color(0xFF7C4DFF))
-                }
-
-                IconButton(onClick = { settings.setTtsEnabled(!settings.ttsEnabled) }) {
-                    Icon(
-                        imageVector = if (settings.ttsEnabled)
-                            Icons.Default.VolumeUp else Icons.Default.VolumeOff,
-                        contentDescription = "Озвучка",
-                        tint = if (settings.ttsEnabled) Color(0xFF4CAF50)
-                               else Color(0xFF9090A0)
-                    )
-                }
-
-                FilledIconButton(
-                    onClick = {
-                        val t = inputText
-                        if (t.isNotBlank()) { inputText = ""; vm.send(t) }
-                    },
-                    enabled = serviceStatus is LlmStatus.Ready
-                            && !vm.isSending && inputText.isNotBlank()
-                ) {
-                    Icon(Icons.Default.Send, "Отправить")
-                }
-            }
+            // ===================== Пилюля ввода =====================
+            GeminiInputBar(
+                inputText = inputText,
+                onInputChange = { inputText = it },
+                onSend = {
+                    val t = inputText.trim()
+                    if (t.isNotBlank()) {
+                        inputText = ""
+                        vm.send(t)
+                    }
+                },
+                onVoiceClick = { overlayVisible = true },
+                ttsEnabled = visualSettings.ttsEnabled,
+                onTtsToggle = { visualSettings.setTtsEnabled(!visualSettings.ttsEnabled) },
+                currentPresetId = visualSettings.currentPresetId,
+                onPresetSelected = { id ->
+                    visualSettings.setPresetId(id)
+                    AppSignals.firePresetChanged()
+                },
+                enabled = serviceStatus is LlmStatus.Ready && !vm.isSending,
+                palette = palette,
+                pillHeightDp = VisualTheme.pillHeight(visualSettings.pillSize),
+                presetIcon = VisualTheme.presetIcon(visualSettings.presetIconStyle)
+            )
         }
 
+        // ===================== Голосовой оверлей =====================
         AnimatedVisibility(
             visible = overlayVisible,
             enter = slideInVertically(initialOffsetY = { it }) + fadeIn(),
             exit = slideOutVertically(targetOffsetY = { it }) + fadeOut()
         ) {
-            VoiceOverlay(
+            GeminiVoiceOverlay(
                 serviceStatus = serviceStatus,
-                settings = settings,
+                settings = visualSettings,
                 viewModel = vm,
-                onDismiss = { overlayVisible = false }
+                onDismiss = { overlayVisible = false },
+                palette = palette,
+                overlayStyle = visualSettings.overlayStyle
             )
         }
     }
 }
 
+// =============================================================
+// Пилюля ввода в стиле Gemini
+// =============================================================
+
 @Composable
-private fun VoiceOverlay(
+private fun GeminiInputBar(
+    inputText: String,
+    onInputChange: (String) -> Unit,
+    onSend: () -> Unit,
+    onVoiceClick: () -> Unit,
+    ttsEnabled: Boolean,
+    onTtsToggle: () -> Unit,
+    currentPresetId: String,
+    onPresetSelected: (String) -> Unit,
+    enabled: Boolean,
+    palette: PaletteColors,
+    pillHeightDp: Int,
+    presetIcon: ImageVector
+) {
+    val hasText = inputText.isNotBlank()
+    var presetMenu by remember { mutableStateOf(false) }
+    val radius = pillHeightDp / 2
+
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(pillHeightDp.dp)
+            .clip(RoundedCornerShape(radius.dp))
+            .background(
+                brush = Brush.horizontalGradient(
+                    colors = listOf(palette.pillBgStart, palette.pillBgEnd)
+                )
+            )
+            .border(
+                width = 1.dp,
+                brush = Brush.horizontalGradient(
+                    colors = listOf(
+                        palette.pillBorderDim,
+                        palette.pillBorderHot,
+                        palette.pillBorderDim
+                    )
+                ),
+                shape = RoundedCornerShape(radius.dp)
+            )
+    ) {
+        Row(
+            modifier = Modifier.fillMaxSize(),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            // ---- Иконка пресета слева ----
+            Box {
+                Box(
+                    modifier = Modifier
+                        .padding(start = 6.dp)
+                        .size((pillHeightDp - 16).dp)
+                        .clip(CircleShape)
+                        .clickable(enabled = enabled) { presetMenu = true },
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = presetIcon,
+                        contentDescription = "Режим",
+                        tint = palette.accent.copy(alpha = 0.9f),
+                        modifier = Modifier.size((pillHeightDp * 0.38f).dp)
+                    )
+                }
+                DropdownMenu(
+                    expanded = presetMenu,
+                    onDismissRequest = { presetMenu = false }
+                ) {
+                    PresetRepository.presets.forEach { p ->
+                        DropdownMenuItem(
+                            text = { Text(p.displayName) },
+                            leadingIcon = {
+                                Icon(
+                                    imageVector = VisualTheme.iconForPreset(p.id),
+                                    contentDescription = null,
+                                    tint = palette.accent
+                                )
+                            },
+                            onClick = {
+                                onPresetSelected(p.id)
+                                presetMenu = false
+                            }
+                        )
+                    }
+                }
+            }
+
+            // ---- Прозрачное поле ввода ----
+            BasicTextField(
+                value = inputText,
+                onValueChange = onInputChange,
+                enabled = enabled,
+                singleLine = true,
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(horizontal = 4.dp),
+                textStyle = TextStyle(
+                    color = palette.inputText,
+                    fontSize = (pillHeightDp * 0.27f).sp
+                ),
+                cursorBrush = SolidColor(palette.accent),
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
+                keyboardActions = KeyboardActions(onSend = { onSend() }),
+                decorationBox = { inner ->
+                    Box(contentAlignment = Alignment.CenterStart) {
+                        if (inputText.isEmpty()) {
+                            Text(
+                                text = "Спросить ассистента",
+                                color = palette.placeholder,
+                                fontSize = (pillHeightDp * 0.27f).sp
+                            )
+                        }
+                        inner()
+                    }
+                }
+            )
+
+            // ---- TTS-toggle ----
+            Box(
+                modifier = Modifier
+                    .size((pillHeightDp - 20).dp)
+                    .clip(CircleShape)
+                    .clickable(enabled = enabled) { onTtsToggle() },
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = if (ttsEnabled) Icons.Default.VolumeUp
+                                  else Icons.Default.VolumeOff,
+                    contentDescription = "Озвучка",
+                    tint = if (ttsEnabled) palette.accent
+                           else palette.placeholder.copy(alpha = 0.7f),
+                    modifier = Modifier.size((pillHeightDp * 0.31f).dp)
+                )
+            }
+
+            // ---- Большая кнопка: Mic ↔ Send, со свечением ----
+            Box(
+                modifier = Modifier
+                    .padding(end = 6.dp)
+                    .size((pillHeightDp - 12).dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size((pillHeightDp + 14).dp)
+                        .background(
+                            brush = Brush.radialGradient(
+                                colors = listOf(
+                                    palette.glow,
+                                    palette.glow.copy(alpha = 0.3f),
+                                    Color.Transparent
+                                )
+                            ),
+                            shape = CircleShape
+                        )
+                )
+                Box(
+                    modifier = Modifier
+                        .size((pillHeightDp - 16).dp)
+                        .clip(CircleShape)
+                        .background(
+                            brush = Brush.radialGradient(
+                                colors = listOf(palette.btnInner, palette.btnOuter)
+                            )
+                        )
+                        .clickable(enabled = enabled) {
+                            if (hasText) onSend() else onVoiceClick()
+                        },
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = if (hasText) Icons.Default.Send
+                                      else Icons.Default.Mic,
+                        contentDescription = if (hasText) "Отправить" else "Голос",
+                        tint = palette.accentSoft,
+                        modifier = Modifier.size((pillHeightDp * 0.35f).dp)
+                    )
+                }
+            }
+        }
+    }
+}
+
+// =============================================================
+// Голосовой оверлей в стиле Gemini (полноэкранный)
+// =============================================================
+
+@Composable
+private fun GeminiVoiceOverlay(
     serviceStatus: LlmStatus,
-    settings: com.example.llmcar.data.SettingsRepository,
+    settings: SettingsRepository,
     viewModel: ChatViewModel,
-    onDismiss: () -> Unit
+    onDismiss: () -> Unit,
+    palette: PaletteColors,
+    overlayStyle: OverlayStyle
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val voiceController = remember { VoiceInputController(context) }
 
     var inputText by remember { mutableStateOf("") }
-    var statusText by remember { mutableStateOf("Говорите или введите текст") }
+    var statusText by remember { mutableStateOf("Готов слушать") }
     var rmsLevel by remember { mutableStateOf(0f) }
     var isListening by remember { mutableStateOf(false) }
     var voiceJob by remember { mutableStateOf<Job?>(null) }
@@ -211,9 +407,8 @@ private fun VoiceOverlay(
             voiceController.listenOnce().collect { ev ->
                 when (ev) {
                     is VoiceEvent.ReadyForSpeech -> statusText = "Слушаю…"
-                    is VoiceEvent.RmsChanged -> {
+                    is VoiceEvent.RmsChanged ->
                         rmsLevel = ((ev.rmsDb + 2f) / 14f).coerceIn(0f, 1f)
-                    }
                     is VoiceEvent.Partial -> {
                         inputText = ev.text
                         statusText = ev.text
@@ -222,8 +417,7 @@ private fun VoiceOverlay(
                         isListening = false
                         inputText = ev.text
                         if (ev.text.isNotBlank() && settings.voiceAutoSend) {
-                            viewModel.send(ev.text)
-                            inputText = ""
+                            viewModel.send(ev.text); inputText = ""
                         } else if (ev.text.isNotBlank()) {
                             statusText = "Нажмите «Отправить»"
                         }
@@ -255,104 +449,225 @@ private fun VoiceOverlay(
         }
     }
 
-    Surface(Modifier.fillMaxSize(), color = Color(0xFF0E0E1A)) {
-        Column(
-            Modifier.fillMaxSize()
-                .background(Brush.verticalGradient(listOf(Color(0xFF0E0E1A), Color(0xFF15152A))))
-                .padding(20.dp)
-        ) {
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                Text("Голосовой ввод", fontSize = 18.sp, color = Color.White,
-                    modifier = Modifier.weight(1f))
-                IconButton(onClick = onDismiss) {
-                    Icon(Icons.Default.Close, "Закрыть", tint = Color.White)
-                }
-            }
+    // Фоновая анимация «пульсации» для стиля WAVE
+    val infinite = rememberInfiniteTransition(label = "ov")
+    val wavePulse by infinite.animateFloat(
+        initialValue = 0.9f, targetValue = 1.1f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(1800, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse
+        ), label = "wave"
+    )
 
-            Spacer(Modifier.height(16.dp))
-
-            Box(Modifier.fillMaxWidth().weight(1f), Alignment.Center) {
-                Column(
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.Center
-                ) {
-                    val displayText = when {
-                        viewModel.liveText.isNotBlank() -> viewModel.liveText
-                        viewModel.messages.lastOrNull()?.role == "assistant" ->
-                            viewModel.messages.last().content
-                        else -> ""
-                    }
-                    if (displayText.isNotBlank()) {
-                        Text(displayText, fontSize = 16.sp, color = Color(0xFFE0E0E0),
-                            modifier = Modifier.padding(horizontal = 16.dp))
-                        Spacer(Modifier.height(24.dp))
-                    } else if (viewModel.isSending) {
-                        Text("Думаю…", fontSize = 16.sp, color = Color(0xFFFFC107))
-                        Spacer(Modifier.height(24.dp))
-                    }
-
-                    VoiceOrb(state = currentOrb)
-
-                    Spacer(Modifier.height(20.dp))
-
-                    SoundBars(
-                        amplitude = rmsLevel,
-                        active = currentOrb == OrbState.Listening ||
-                                currentOrb == OrbState.Speaking
-                    )
-
-                    if (displayText.isBlank() && !viewModel.isSending) {
-                        Spacer(Modifier.height(20.dp))
-                        Text(statusText, fontSize = 13.sp, color = Color(0xFF9090A0))
-                    }
-                }
-            }
-
-            Spacer(Modifier.height(12.dp))
-
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                OutlinedTextField(
-                    value = inputText,
-                    onValueChange = { inputText = it },
-                    modifier = Modifier.weight(1f),
-                    placeholder = { Text("Введите сообщение…") },
-                    enabled = serviceStatus is LlmStatus.Ready && !viewModel.isSending,
-                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
-                    shape = RoundedCornerShape(24.dp),
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedTextColor = Color.White,
-                        unfocusedTextColor = Color.White,
-                        focusedBorderColor = Color(0xFF7C4DFF),
-                        unfocusedBorderColor = Color(0xFF3A3A5A),
-                        cursorColor = Color(0xFF7C4DFF)
-                    )
+    Surface(
+        Modifier.fillMaxSize(),
+        color = palette.overlayBgTop
+    ) {
+        Box(
+            Modifier.fillMaxSize().background(
+                Brush.verticalGradient(
+                    listOf(palette.overlayBgTop, palette.overlayBgBottom)
                 )
-                Spacer(Modifier.width(8.dp))
-
-                IconButton(
-                    onClick = {
-                        if (!isListening) startListening() else voiceController.stop()
-                    },
-                    enabled = !viewModel.isSending
+            )
+        ) {
+            Column(
+                Modifier.fillMaxSize()
+                    .padding(horizontal = 20.dp, vertical = 16.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                // Верхняя панель оверлея
+                Row(
+                    Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Icon(Icons.Default.Mic, "Микрофон",
-                        tint = if (isListening) Color(0xFFF44336) else Color(0xFF7C4DFF))
+                    Text(
+                        "Голосовой ввод",
+                        fontSize = 16.sp,
+                        color = palette.accentSoft,
+                        fontWeight = FontWeight.Medium,
+                        modifier = Modifier.weight(1f)
+                    )
+                    IconButton(onClick = onDismiss) {
+                        Icon(Icons.Default.Close, "Закрыть",
+                            tint = palette.accent)
+                    }
                 }
 
-                FilledIconButton(
-                    onClick = {
-                        val t = inputText
-                        if (t.isNotBlank()) { inputText = ""; viewModel.send(t) }
-                    },
-                    enabled = serviceStatus is LlmStatus.Ready
-                            && !viewModel.isSending && inputText.isNotBlank()
+                Spacer(Modifier.height(8.dp))
+
+                // Центральная область
+                Box(
+                    Modifier.fillMaxWidth().weight(1f),
+                    contentAlignment = Alignment.Center
                 ) {
-                    Icon(Icons.Default.Send, "Отправить")
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.Center
+                    ) {
+                        val displayText = when {
+                            viewModel.liveText.isNotBlank() -> viewModel.liveText
+                            viewModel.messages.lastOrNull()?.role == "assistant" ->
+                                viewModel.messages.last().content
+                            else -> ""
+                        }
+
+                        when (overlayStyle) {
+                            OverlayStyle.GLOW -> {
+                                VoiceOrb(state = currentOrb, accentColor = palette.accent)
+                                Spacer(Modifier.height(20.dp))
+                                SoundBars(
+                                    amplitude = rmsLevel,
+                                    active = currentOrb == OrbState.Listening ||
+                                            currentOrb == OrbState.Speaking
+                                )
+                            }
+                            OverlayStyle.MINIMAL -> {
+                                VoiceOrb(state = currentOrb, accentColor = palette.accent)
+                            }
+                            OverlayStyle.WAVE -> {
+                                Box(
+                                    modifier = Modifier
+                                        .size((240 * wavePulse).dp),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    VoiceOrb(state = currentOrb, accentColor = palette.accent)
+                                }
+                                Spacer(Modifier.height(24.dp))
+                                SoundBars(
+                                    amplitude = rmsLevel,
+                                    active = currentOrb == OrbState.Listening ||
+                                            currentOrb == OrbState.Speaking,
+                                    barCount = 15
+                                )
+                            }
+                        }
+
+                        Spacer(Modifier.height(28.dp))
+
+                        when {
+                            viewModel.isSending -> Text(
+                                "Думаю…",
+                                fontSize = 16.sp,
+                                color = palette.accent,
+                                fontWeight = FontWeight.Medium
+                            )
+                            displayText.isNotBlank() -> Text(
+                                displayText,
+                                fontSize = 16.sp,
+                                color = palette.inputText,
+                                textAlign = TextAlign.Center,
+                                modifier = Modifier.padding(horizontal = 24.dp)
+                            )
+                            else -> Text(
+                                statusText,
+                                fontSize = 14.sp,
+                                color = palette.placeholder,
+                                textAlign = TextAlign.Center
+                            )
+                        }
+                    }
+                }
+
+                Spacer(Modifier.height(12.dp))
+
+                // Нижняя «пилюля» ввода (в том же визуальном языке)
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .height(54.dp)
+                        .clip(RoundedCornerShape(27.dp))
+                        .background(
+                            Brush.horizontalGradient(
+                                listOf(palette.pillBgStart, palette.pillBgEnd)
+                            )
+                        )
+                        .border(
+                            1.dp,
+                            Brush.horizontalGradient(
+                                listOf(
+                                    palette.pillBorderDim,
+                                    palette.pillBorderHot,
+                                    palette.pillBorderDim
+                                )
+                            ),
+                            RoundedCornerShape(27.dp)
+                        ),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    BasicTextField(
+                        value = inputText,
+                        onValueChange = { inputText = it },
+                        enabled = serviceStatus is LlmStatus.Ready && !viewModel.isSending,
+                        singleLine = true,
+                        modifier = Modifier
+                            .weight(1f)
+                            .padding(start = 20.dp, end = 6.dp),
+                        textStyle = TextStyle(color = palette.inputText, fontSize = 15.sp),
+                        cursorBrush = SolidColor(palette.accent),
+                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
+                        keyboardActions = KeyboardActions(onSend = {
+                            val t = inputText.trim()
+                            if (t.isNotBlank()) {
+                                inputText = ""
+                                viewModel.send(t)
+                            }
+                        }),
+                        decorationBox = { inner ->
+                            Box(contentAlignment = Alignment.CenterStart) {
+                                if (inputText.isEmpty())
+                                    Text("Спросить ассистента",
+                                        color = palette.placeholder, fontSize = 15.sp)
+                                inner()
+                            }
+                        }
+                    )
+
+                    Box(
+                        modifier = Modifier
+                            .padding(end = 6.dp)
+                            .size(38.dp)
+                            .clip(CircleShape)
+                            .background(
+                                Brush.radialGradient(
+                                    listOf(palette.btnInner, palette.btnOuter)
+                                )
+                            )
+                            .clickable(
+                                enabled = serviceStatus is LlmStatus.Ready &&
+                                        !viewModel.isSending
+                            ) {
+                                val t = inputText.trim()
+                                if (t.isNotBlank()) {
+                                    inputText = ""
+                                    viewModel.send(t)
+                                } else if (!isListening) startListening()
+                            },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = if (inputText.isNotBlank()) Icons.Default.Send
+                                          else Icons.Default.Mic,
+                            contentDescription = null,
+                            tint = palette.accentSoft,
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
+                }
+
+                Spacer(Modifier.height(8.dp))
+
+                // Кнопка закрытия
+                TextButton(onClick = onDismiss) {
+                    Text("Закрыть", color = palette.accent, fontSize = 14.sp)
                 }
             }
         }
     }
 }
+
+// =============================================================
+// Пузыри сообщений
+// =============================================================
 
 @Composable
 private fun MessageBubble(msg: UiMessage) {
