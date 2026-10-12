@@ -35,10 +35,10 @@
         android:theme="@style/Theme.LlmCarShell"
         android:usesCleartextTraffic="true">
 
+        <!-- screenOrientation удалён: приложение работает и в портрете, и в альбоме -->
         <activity
             android:name=".MainActivity"
             android:exported="true"
-            android:screenOrientation="landscape"
             android:launchMode="singleTask"
             android:configChanges="orientation|screenSize|keyboardHidden">
             <intent-filter>
