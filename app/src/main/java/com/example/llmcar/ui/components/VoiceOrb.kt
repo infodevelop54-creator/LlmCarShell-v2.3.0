@@ -23,8 +23,11 @@ import androidx.compose.ui.unit.dp
 enum class OrbState { Idle, Listening, Thinking, Speaking }
 
 @Composable
-fun VoiceOrb(state: OrbState, modifier: Modifier = Modifier) {
-
+fun VoiceOrb(
+    state: OrbState,
+    modifier: Modifier = Modifier,
+    accentColor: Color = Color(0xFF7C4DFF)
+) {
     val infinite = rememberInfiniteTransition(label = "orb")
     val pulse by infinite.animateFloat(
         initialValue = 0.94f, targetValue = 1.06f,
@@ -38,8 +41,8 @@ fun VoiceOrb(state: OrbState, modifier: Modifier = Modifier) {
             repeatMode = RepeatMode.Reverse), label = "glow")
 
     val color: Color = when (state) {
-        OrbState.Idle -> Color(0xFF505070)
-        OrbState.Listening -> Color(0xFF7C4DFF)
+        OrbState.Idle -> accentColor.copy(alpha = 0.55f)
+        OrbState.Listening -> accentColor
         OrbState.Thinking -> Color(0xFFFFA726)
         OrbState.Speaking -> Color(0xFF4CAF50)
     }
