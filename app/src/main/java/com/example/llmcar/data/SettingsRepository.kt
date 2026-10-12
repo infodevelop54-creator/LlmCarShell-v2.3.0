@@ -5,6 +5,10 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import com.example.llmcar.ui.theme.AccentHue
+import com.example.llmcar.ui.theme.OverlayStyle
+import com.example.llmcar.ui.theme.PillSize
+import com.example.llmcar.ui.theme.PresetIconStyle
 import kotlin.jvm.JvmName
 
 enum class ActivationMode { VOICE, BUTTON }
@@ -55,6 +59,22 @@ class SettingsRepository(context: Context) {
     var cloudSyncEnabled by mutableStateOf(prefs.getBoolean(KEY_CLOUD_ENABLED, false)); private set
     var cloudSyncEmail by mutableStateOf(prefs.getString(KEY_CLOUD_EMAIL, null)); private set
     var yandexMusicEnabled by mutableStateOf(prefs.getBoolean(KEY_YM_ENABLED, true)); private set
+
+    // --------- Визуальные настройки ---------
+    var accentHue by mutableStateOf(
+        runCatching { AccentHue.valueOf(prefs.getString(KEY_ACCENT_HUE, "TEAL") ?: "TEAL") }
+            .getOrDefault(AccentHue.TEAL)); private set
+    var pillSize by mutableStateOf(
+        runCatching { PillSize.valueOf(prefs.getString(KEY_PILL_SIZE, "NORMAL") ?: "NORMAL") }
+            .getOrDefault(PillSize.NORMAL)); private set
+    var presetIconStyle by mutableStateOf(
+        runCatching { PresetIconStyle.valueOf(prefs.getString(KEY_PRESET_ICON, "SPARKLES") ?: "SPARKLES") }
+            .getOrDefault(PresetIconStyle.SPARKLES)); private set
+    var overlayStyle by mutableStateOf(
+        runCatching { OverlayStyle.valueOf(prefs.getString(KEY_OVERLAY_STYLE, "GLOW") ?: "GLOW") }
+            .getOrDefault(OverlayStyle.GLOW)); private set
+
+    // --------- Сеттеры ---------
 
     @JvmName("applyLastModelPath")
     fun setLastModelPath(v: String?) { lastModelPath = v; prefs.edit().putString(KEY_LAST_MODEL, v).apply() }
@@ -138,6 +158,32 @@ class SettingsRepository(context: Context) {
     @JvmName("applyYandexMusicEnabled")
     fun setYandexMusicEnabled(v: Boolean) { yandexMusicEnabled = v; prefs.edit().putBoolean(KEY_YM_ENABLED, v).apply() }
 
+    // --------- Сеттеры визуальных настроек ---------
+
+    @JvmName("applyAccentHue")
+    fun setAccentHue(v: AccentHue) {
+        accentHue = v
+        prefs.edit().putString(KEY_ACCENT_HUE, v.name).apply()
+    }
+
+    @JvmName("applyPillSize")
+    fun setPillSize(v: PillSize) {
+        pillSize = v
+        prefs.edit().putString(KEY_PILL_SIZE, v.name).apply()
+    }
+
+    @JvmName("applyPresetIconStyle")
+    fun setPresetIconStyle(v: PresetIconStyle) {
+        presetIconStyle = v
+        prefs.edit().putString(KEY_PRESET_ICON, v.name).apply()
+    }
+
+    @JvmName("applyOverlayStyle")
+    fun setOverlayStyle(v: OverlayStyle) {
+        overlayStyle = v
+        prefs.edit().putString(KEY_OVERLAY_STYLE, v.name).apply()
+    }
+
     fun applyRamProfile(profile: String) {
         ramProfile = profile
         prefs.edit().putString(KEY_RAM_PROFILE, profile).apply()
@@ -192,6 +238,12 @@ class SettingsRepository(context: Context) {
         private const val KEY_CLOUD_EMAIL = "cloud_sync_email"
         private const val KEY_YM_ENABLED = "yandex_music_enabled"
         private const val KEY_TREE_URIS = "model_tree_uris"
+
+        // --------- Ключи визуальных настроек ---------
+        private const val KEY_ACCENT_HUE = "accent_hue"
+        private const val KEY_PILL_SIZE = "pill_size"
+        private const val KEY_PRESET_ICON = "preset_icon"
+        private const val KEY_OVERLAY_STYLE = "overlay_style"
 
         const val DEFAULT_WAKE_WORD = "привет ассистент"
     }
