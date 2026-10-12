@@ -7,6 +7,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -68,6 +69,11 @@ import com.example.llmcar.service.FloatingButtonService
 import com.example.llmcar.service.LlmForegroundService
 import com.example.llmcar.service.LlmStatus
 import com.example.llmcar.service.VoiceActivationService
+import com.example.llmcar.ui.theme.AccentHue
+import com.example.llmcar.ui.theme.OverlayStyle
+import com.example.llmcar.ui.theme.PillSize
+import com.example.llmcar.ui.theme.PresetIconStyle
+import com.example.llmcar.ui.theme.VisualTheme
 import com.example.llmcar.util.AppSignals
 import com.example.llmcar.util.OverlayPermission
 import com.example.llmcar.voice.AsrEngineFactory
@@ -114,16 +120,12 @@ fun SettingsScreen(
     var confirmClearDtc by remember { mutableStateOf(false) }
 
     // ---------- Состояние: персона ----------
-    // promptDraft хранит текущее значение поля ввода. Промпт сохраняется
-    // в SettingsRepository при каждом нажатии клавиши (on-the-fly).
     var promptDraft by remember {
         mutableStateOf(
             settingsRepo.customSystemPrompt
                 ?: PresetRepository.byId(settingsRepo.currentPresetId).prompt
         )
     }
-    // Флаг: пользователь редактировал поле в текущей сессии.
-    // Нужен, чтобы смена пресета не затирала ручной ввод.
     var promptEdited by remember { mutableStateOf(false) }
 
     // ---------- Состояние: медиа-тест ----------
@@ -142,8 +144,6 @@ fun SettingsScreen(
         TtsController.listVoicesAsync(context, settingsRepo.ttsEngine) { voices = it }
     }
 
-    // Обновление черновика промпта при смене пресета.
-    // НЕ перезаписываем, если пользователь уже что-то ввёл вручную в этой сессии.
     LaunchedEffect(settingsRepo.currentPresetId) {
         if (!promptEdited) {
             promptDraft = settingsRepo.customSystemPrompt
@@ -192,7 +192,6 @@ fun SettingsScreen(
 
         Spacer(Modifier.height(12.dp))
 
-        // Кнопка «История запросов»
         Button(
             onClick = onOpenHistory,
             modifier = Modifier.fillMaxWidth()
@@ -228,8 +227,6 @@ fun SettingsScreen(
                     .clickable {
                         settingsRepo.setPresetId(preset.id)
                         AppSignals.firePresetChanged()
-                        // НЕ сбрасываем customSystemPrompt — пользователь
-                        // сам решит, использовать ли кастомный промпт или нет.
                         promptEdited = false
                         promptDraft = settingsRepo.customSystemPrompt
                             ?: PresetRepository.byId(preset.id).prompt
@@ -265,8 +262,7 @@ fun SettingsScreen(
             onValueChange = {
                 promptDraft = it
                 promptEdited = true
-                // Автосохранение промпта при каждом изменении — «на лету».
-                // Если поле стёрли — вернёмся к промпту пресета.
+                // Автосохранение промпта на лету
                 settingsRepo.setCustomSystemPrompt(it.ifBlank { null })
             },
             modifier = Modifier
@@ -279,14 +275,11 @@ fun SettingsScreen(
         Spacer(Modifier.height(6.dp))
 
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            // Кнопка «Сохранить» оставлена для явного подтверждения — но
-            // фактически промпт уже сохранён при каждом изменении.
             Button(
                 onClick = {
                     settingsRepo.setCustomSystemPrompt(promptDraft.ifBlank { null })
                     promptEdited = false
                 },
-                enabled = true,
                 modifier = Modifier.weight(1f)
             ) { Text("Сохранить") }
 
@@ -299,6 +292,62 @@ fun SettingsScreen(
                 modifier = Modifier.weight(1f)
             ) { Text("Сбросить к пресету") }
         }
+
+        Spacer(Modifier.height(24.dp))
+
+        // ================================================================
+        // 1b. Визуальные настройки
+        // ================================================================
+        SectionTitle("Визуальные настройки")
+
+        Text(
+            "Цвет и внешний вид поля ввода, а также стиль голосового оверлея.",
+            fontSize = 12.sp, color = Color(0xFF9090A0)
+        )
+        Spacer(Modifier.height(10.dp))
+
+        // ----- Оттенок -----
+        VisualChoiceRow(
+            title = "Оттенок интерфейса",
+            options = AccentHue.values().toList(),
+            selected = settingsRepo.accentHue,
+            labelOf = { VisualTheme.label(it) },
+            colorOf = { VisualTheme.palette(it).accent },
+            onSelected = { settingsRepo.setAccentHue(it) }
+        )
+        Spacer(Modifier.height(8.dp))
+
+        // ----- Размер пилюли -----
+        VisualChoiceRow(
+            title = "Размер поля ввода",
+            options = PillSize.values().toList(),
+            selected = settingsRepo.pillSize,
+            labelOf = { VisualTheme.label(it) },
+            colorOf = { null },
+            onSelected = { settingsRepo.setPillSize(it) }
+        )
+        Spacer(Modifier.height(8.dp))
+
+        // ----- Иконка пресета -----
+        VisualChoiceRow(
+            title = "Иконка режима (слева в пилюле)",
+            options = PresetIconStyle.values().toList(),
+            selected = settingsRepo.presetIconStyle,
+            labelOf = { VisualTheme.label(it) },
+            colorOf = { null },
+            onSelected = { settingsRepo.setPresetIconStyle(it) }
+        )
+        Spacer(Modifier.height(8.dp))
+
+        // ----- Стиль оверлея -----
+        VisualChoiceRow(
+            title = "Стиль голосового оверлея",
+            options = OverlayStyle.values().toList(),
+            selected = settingsRepo.overlayStyle,
+            labelOf = { VisualTheme.label(it) },
+            colorOf = { null },
+            onSelected = { settingsRepo.setOverlayStyle(it) }
+        )
 
         Spacer(Modifier.height(24.dp))
 
@@ -1184,7 +1233,7 @@ fun SettingsScreen(
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Button(
                         onClick = {
-                            // TODO: запустить Google Sign-In через Activity Result API
+                            // TODO: Google Sign-In через Activity Result API
                         },
                         modifier = Modifier.weight(1f)
                     ) {
@@ -1376,6 +1425,71 @@ private fun <T : Number> RamChoice(
                                 horizontal = 10.dp, vertical = 6.dp
                             )
                         )
+                    }
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Строка выбора визуального параметра с горизонтальной прокруткой.
+ * Если colorOf возвращает не-null — рядом с подписью показывается цветной кружок.
+ */
+@Composable
+private fun <T> VisualChoiceRow(
+    title: String,
+    options: List<T>,
+    selected: T,
+    labelOf: (T) -> String,
+    colorOf: (T) -> Color?,
+    onSelected: (T) -> Unit
+) {
+    Surface(
+        color = Color(0xFF252535),
+        shape = MaterialTheme.shapes.medium,
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 3.dp)
+    ) {
+        Column(Modifier.padding(12.dp)) {
+            Text(title, fontSize = 14.sp, color = Color.White)
+            Spacer(Modifier.height(8.dp))
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState())
+            ) {
+                options.forEach { opt ->
+                    val isSel = opt == selected
+                    val swatch = colorOf(opt)
+                    Surface(
+                        color = if (isSel) Color(0xFF7C4DFF)
+                                else Color(0xFF1E1E2E),
+                        shape = MaterialTheme.shapes.small,
+                        modifier = Modifier.clickable { onSelected(opt) }
+                    ) {
+                        Row(
+                            Modifier.padding(
+                                horizontal = 10.dp, vertical = 6.dp
+                            ),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            if (swatch != null) {
+                                Box(
+                                    Modifier
+                                        .size(14.dp)
+                                        .background(swatch, CircleShape)
+                                )
+                                Spacer(Modifier.width(6.dp))
+                            }
+                            Text(
+                                labelOf(opt),
+                                fontSize = 13.sp,
+                                color = Color.White
+                            )
+                        }
                     }
                 }
             }
